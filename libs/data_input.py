@@ -14,8 +14,8 @@ def getImages(picDirPath, label):
     for img in paths.list_images(tgtDir):
         # Load the image
         img = cv2.imread(img)
-        # Resize the image to 120x120 squware
-        img = resize2squware(img, 120, 120)
+        # Resize the image to 20x20 squware
+        img = resize2squware(img, 20, 20)
         # Add a third channel dimension to the image to make Keras happy
         img = np.expand_dims(img, axis=2)
         datas.append(img)
