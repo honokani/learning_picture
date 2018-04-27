@@ -24,18 +24,18 @@ def main():
         # make data set
         data_x = np.array(ds, dtype="float") / 255.0
         return data_x, data_l
-    
-    
-    
+
+
+
     def makeBiasVal(shape):
         b = tf.constant(0.1, shape=shape)
         return tf.Variable(b)
-    
+
     def makeWeightVal(shape):
         # initialize weight by gauusian
         w = tf.truncated_normal(shape, stddev=0.1)
         return tf.Variable(w)
-    
+
     def makeConvLayer(ch_in, ch_out, sz):
         # define stride size
         UNUSED_PARAM      = 1
@@ -45,41 +45,41 @@ def main():
         w = makeWeightVal(conv_window_size)
         b = makeBiasVal([ch_out])
         return lambda x: tf.nn.relu( b + tf.nn.conv2d(x, w, shift_span, padding='SAME') )
-    
+
     def makePoolLayer(sz):
         UNUSED_PARAM      = 1
         pool_window_size = [UNUSED_PARAM, sz, sz, UNUSED_PARAM]
         shift_span       = [UNUSED_PARAM, sz, sz, UNUSED_PARAM]
         return lambda x: tf.nn.max_pool(x, ksize=pool_window_size, strides=shift_span, padding='SAME')
-    
-    def makeFullyConnectedLayer(ch_in, ch_out, sz, f):
-        flatten_input_ch = sz * ch_in
-        w = makeWeightVal([flatten_input_ch, ch_out])
-        b = makeBiasVal([ch_out])
-        return lambda x: f( b + tf.matmul(tf.reshape(x, [-1, flatten_input_ch]), w) )
-    
-    def makeFullyConnectedLayerWithRelu(ch_in, ch_out, sz):
-        return makeFullyConnectedLayer(ch_in, ch_out, sz, tf.nn.relu)
-    
-    def makeFullyConnectedLayerWithSoftmax(ch_in, ch_out, sz):
-        return makeFullyConnectedLayer(ch_in, ch_out, sz, tf.nn.softmax)
-    
+
+    def makeFullyConnectedLayer(in_sz, out_sz, f):
+        w = makeWeightVal([in_sz, out_sz])
+        b = makeBiasVal([out_sz])
+        print(w)
+        return lambda x: f( b + tf.matmul(tf.reshape(x, [-1, in_sz]), w) )
+
+    def makeFullyConnectedLayerWithRelu(in_sz, out_sz):
+        return makeFullyConnectedLayer(in_sz, out_sz, tf.nn.relu)
+
+    def makeFullyConnectedLayerWithSoftmax(in_sz, out_sz):
+        return makeFullyConnectedLayer(in_sz, out_sz, tf.nn.softmax)
+
     def makeDropoutLayer(dr_ratio):
         return lambda x: tf.nn.dropout(x, dr_ratio)
-    
+
     # Build CNN Model
     def buildModel(ph_x, x_params, label_num):
         # get size of flatten x and label
         x_w, x_h, x_ch = x_params
         pic_flat_size = x_w * x_h
         img_total_pixcel = pic_flat_size * x_ch
-    
+
         # reshape input x
         x_in = tf.reshape(ph_x, [-1, x_w, x_h, x_ch])
         # 1st conv-pool layer set
         h1_out_ch = 32
         h1_w_size = 5
-        h1_c = makeConvLayer(x_ch, h1_out_ch, h1_w_size,)(x_in)
+        h1_c = makeConvLayer(x_ch, h1_out_ch, h1_w_size)(x_in)
         h1_p_size = 2
         h1_p = makePoolLayer(h1_p_size)(h1_c)
         # 2nd conv-pool layer set
@@ -89,28 +89,30 @@ def main():
         h2_p_size = 2
         h2_p = makePoolLayer(h2_p_size)(h2_c)
         # full connected layer and drop layer
-        fc1_out_ch = 1024
-        fc1_input_size = int(pic_flat_size / (h1_p_size * h2_p_size))
-        fc1_out = makeFullyConnectedLayerWithRelu(h2_out_ch, fc1_out_ch, fc1_input_size)(h2_p)
+        fc1_pic_size = int(pic_flat_size / math.pow(h1_p_size * h2_p_size, 2))
+        fc1_pic_flatten = fc1_pic_size * h2_out_ch
+        fc1_layer_len = 1024
+        fc1_out = makeFullyConnectedLayerWithRelu(fc1_pic_flatten, fc1_layer_len)(h2_p)
         drop_rate = 0.1
         fc1_rest = makeDropoutLayer(drop_rate)(fc1_out)
         # normalization
-        fc2_out_ch = label_num
-        fc2_out = makeFullyConnectedLayerWithSoftmax(fc1_out_ch, fc2_out_ch, fc1_input_size)(fc1_rest)
-    
+        fc2_layer_len = label_num
+        fc2_out = makeFullyConnectedLayerWithSoftmax(fc1_layer_len, fc2_layer_len)(fc1_rest)
+
+        print(fc2_out.shape)
         return fc2_out
-    
+
     def defineLoss(result, correct):
         # culc cross entropy
         return -tf.reduce_sum( correct * tf.log(result) )
-    
+
     def minimizeLoss(loss):
         train_ratio = 0.1
         return tf.train.AdamOptimizer( train_ratio ).minimize( loss )
-    
+
     def checkAccuracy():
         return 0
-    
+
     def runLearning(training_step, inputs, epoch_sz, batch_sz):
         npSplitAt=lambda n,t:(np.empty,t)if(len(t)<1 or n<1)else((t,np.empty)if(len(t)<n)else(t[:n],t[n:]))
         xs,ys = inputs[0],inputs[1]
@@ -118,23 +120,24 @@ def main():
         sess  = tf.Session()
         sess.run(tf.global_variables_initializer())
         # saver = tf.train.Saver()
-    
-        print("hi")
+
         # run epoch-size time
         for ep in range(epoch_sz):
-            print("hi {}".format(ep))
             rest_tgt = np.random.permutation(len(xs))
-            while(0<len(rest_tgt)):
+            while(0 < rest_tgt.shape[0]):
                 tgt_to_pick, rest_tgt = npSplitAt(batch_sz, rest_tgt)
                 batch_x = xs[tgt_to_pick]
                 batch_y = ys[tgt_to_pick]
                 sess.run(training_step, feed_dict = {ph_x: batch_x, ph_y: batch_y})
-            if(ep%10 == 0):
-                print(ep)
-    
+            if(ep%10 == 2):
+                print("hi {}".format(ep))
 
+
+    # main
+    print("start!")
+
+    # get input datas
     in_xs, in_ys = getInputDatas()
-
     # get size of each pic and labels
     x_w  = in_xs[0].shape[0]
     x_h  = in_xs[0].shape[1]
@@ -142,13 +145,12 @@ def main():
         print("error! : data shape is not square.")
         return(-1)
     x_ch = in_xs[0].shape[3]
-    label_num = len( in_ys )
+    label_num = in_ys[0].shape[0]
 
     graph_cnn = tf.Graph()
     with graph_cnn.as_default():
-        print("hi")
         # define place holder
-        ph_x = tf.placeholder(tf.float32, shape=[None, x_w*x_h*x_ch])
+        ph_x = tf.placeholder(tf.float32, shape=[None, x_w, x_h, 1, x_ch])
         ph_y = tf.placeholder(tf.float32, shape=[None, label_num])
 
         # build cnn model, get placeholder, and result logits
@@ -161,9 +163,10 @@ def main():
         # do learn
         total_x_num = ph_x.shape[0]
         epoch_sz = 10
-        minibatch_sz = 100
+        minibatch_sz = 1
         runLearning(training_step, (in_xs, in_ys), epoch_sz, minibatch_sz)
 
+    print("end!")
 
 if __name__ == '__main__':
     main()
