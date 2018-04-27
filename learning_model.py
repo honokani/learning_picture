@@ -25,8 +25,6 @@ def main():
         data_x = np.array(ds, dtype="float") / 255.0
         return data_x, data_l
 
-
-
     def makeBiasVal(shape):
         b = tf.constant(0.1, shape=shape)
         return tf.Variable(b)
@@ -113,14 +111,9 @@ def main():
     def checkAccuracy():
         return 0
 
-    def runLearning(training_step, inputs, epoch_sz, batch_sz):
+    def runLearning(sess, training_step, inputs, epoch_sz, batch_sz):
         npSplitAt=lambda n,t:(np.empty,t)if(len(t)<1 or n<1)else((t,np.empty)if(len(t)<n)else(t[:n],t[n:]))
         xs,ys = inputs[0],inputs[1]
-        # initialize session
-        sess  = tf.Session()
-        sess.run(tf.global_variables_initializer())
-        # saver = tf.train.Saver()
-
         # run epoch-size time
         for ep in range(epoch_sz):
             rest_tgt = np.random.permutation(len(xs))
@@ -129,12 +122,11 @@ def main():
                 batch_x = xs[tgt_to_pick]
                 batch_y = ys[tgt_to_pick]
                 sess.run(training_step, feed_dict = {ph_x: batch_x, ph_y: batch_y})
-            if(ep%10 == 2):
-                print("hi {}".format(ep))
+            if(ep%10 == 0):
+                print("ep: {} , ".format(ep))
 
+        return sess
 
-    # main
-    print("start!")
 
     # get input datas
     in_xs, in_ys = getInputDatas()
@@ -152,7 +144,6 @@ def main():
         # define place holder
         ph_x = tf.placeholder(tf.float32, shape=[None, x_w, x_h, 1, x_ch])
         ph_y = tf.placeholder(tf.float32, shape=[None, label_num])
-
         # build cnn model, get placeholder, and result logits
         result_logits = buildModel(ph_x, (x_w,x_h,x_ch), label_num)
         # get loss from diff between "input label" and "result through cnn model"
@@ -160,14 +151,26 @@ def main():
         # training model step
         training_step = minimizeLoss(loss_val)
 
+        # ready session
+        sess  = tf.Session()
+        saver = tf.train.Saver()
+        # initialize session
+        sess.run(tf.global_variables_initializer())
+
         # do learn
         total_x_num = ph_x.shape[0]
-        epoch_sz = 10
+        epoch_sz = 100
         minibatch_sz = 1
-        runLearning(training_step, (in_xs, in_ys), epoch_sz, minibatch_sz)
+        sess = runLearning(sess, training_step, (in_xs, in_ys), epoch_sz, minibatch_sz)
 
-    print("end!")
+        # save model
+        model_name = "model.ckpt"
+        model_path = os.path.join(COMMON_DIR_PATH, model_name)
+        save_path = saver.save(sess, model_path)
+
 
 if __name__ == '__main__':
+    print("start!")
     main()
+    print("end!")
 
