@@ -53,7 +53,6 @@ def main():
     def makeFullyConnectedLayer(in_sz, out_sz, f):
         w = makeWeightVal([in_sz, out_sz])
         b = makeBiasVal([out_sz])
-        print(w)
         return lambda x: f( b + tf.matmul(tf.reshape(x, [-1, in_sz]), w) )
 
     def makeFullyConnectedLayerWithRelu(in_sz, out_sz):
@@ -63,10 +62,10 @@ def main():
         return makeFullyConnectedLayer(in_sz, out_sz, tf.nn.softmax)
 
     def makeDropoutLayer(dr_ratio):
-        return lambda x: tf.nn.dropout(x, dr_ratio)
+        return lambda x: tf.nn.dropout(x, 1-dr_ratio)
 
     # Build CNN Model
-    def buildModel(ph_x, x_params, label_num):
+    def buildModel(ph_x, drop_ratio, x_params, label_num):
         # get size of flatten x and label
         x_w, x_h, x_ch = x_params
         pic_flat_size = x_w * x_h
@@ -91,13 +90,11 @@ def main():
         fc1_pic_flatten = fc1_pic_size * h2_out_ch
         fc1_layer_len = 1024
         fc1_out = makeFullyConnectedLayerWithRelu(fc1_pic_flatten, fc1_layer_len)(h2_p)
-        drop_rate = 0.1
-        fc1_rest = makeDropoutLayer(drop_rate)(fc1_out)
+        fc1_rest = makeDropoutLayer(drop_ratio)(fc1_out)
         # normalization
         fc2_layer_len = label_num
         fc2_out = makeFullyConnectedLayerWithSoftmax(fc1_layer_len, fc2_layer_len)(fc1_rest)
 
-        print(fc2_out.shape)
         return fc2_out
 
     def defineLoss(result, correct):
@@ -105,26 +102,48 @@ def main():
         return -tf.reduce_sum( correct * tf.log(result) )
 
     def minimizeLoss(loss):
-        train_ratio = 0.1
+        train_ratio = 0.2
         return tf.train.AdamOptimizer( train_ratio ).minimize( loss )
 
-    def checkAccuracy():
-        return 0
+    def checkAccuracy(result, correct):
+        prediction = tf.equal(tf.argmax(result, 1), tf.argmax(correct, 1))
+        accuracy = tf.reduce_mean(tf.cast(prediction, "float"))
+        return accuracy
 
-    def runLearning(sess, training_step, inputs, epoch_sz, batch_sz):
-        npSplitAt=lambda n,t:(np.empty,t)if(len(t)<1 or n<1)else((t,np.empty)if(len(t)<n)else(t[:n],t[n:]))
-        xs,ys = inputs[0],inputs[1]
+    def runLearning(sess, ops, itors, inputs, train_ratio):
+        e = np.array([])
+        npSplit=lambda n,t:(e,t)if(len(t)<1 or n<1)else((t,e)if(len(t)<n)else(t[:n],t[n:]))
+
+        # expand inputs
+        training_step, check_step = ops[0], ops[1]
+        epoch_sz, minibatch_sz = itors[0], itors[1]
+
+        # pick inputs for accuracy test
+        xs, ys = inputs[0], inputs[1]
+        input_sz = len(ys)
+        test_sz  = int(input_sz * train_ratio)
+        trains_num = np.random.permutation(input_sz)
+        tgt_to_accuracy, tgt_to_train = npSplit(test_sz, trains_num)
+        test_x   = xs[tgt_to_accuracy]
+        test_y   = ys[tgt_to_accuracy]
+        train_x  = xs[tgt_to_train]
+        train_y  = ys[tgt_to_train]
+        train_sz = input_sz - test_sz
+
         # run epoch-size time
         for ep in range(epoch_sz):
-            rest_tgt = np.random.permutation(len(xs))
-            while(0 < rest_tgt.shape[0]):
-                tgt_to_pick, rest_tgt = npSplitAt(batch_sz, rest_tgt)
-                batch_x = xs[tgt_to_pick]
-                batch_y = ys[tgt_to_pick]
-                sess.run(training_step, feed_dict = {ph_x: batch_x, ph_y: batch_y})
+            rest_tgt = np.random.permutation(train_sz)
+            while(0 < rest_tgt.size):
+                tgt_to_pick, rest_tgt = npSplit(minibatch_sz, rest_tgt)
+                batch_x = train_x[tgt_to_pick]
+                batch_y = train_y[tgt_to_pick]
+                sess.run(training_step, feed_dict={ph_x:batch_x, ph_y:batch_y, drop_ratio:0.5})
             if(ep%10 == 0):
-                print("ep: {} , ".format(ep))
+                train=sess.run(check_step, feed_dict={ph_x:batch_x, ph_y:batch_y, drop_ratio:0.0})
+                acc=sess.run(check_step, feed_dict={ph_x:test_x, ph_y:test_y, drop_ratio:0.0})
+                print("ep: {}, train: {}, accuracy: {}".format(ep, train, acc))
 
+        # return result
         return sess
 
 
@@ -144,12 +163,17 @@ def main():
         # define place holder
         ph_x = tf.placeholder(tf.float32, shape=[None, x_w, x_h, 1, x_ch])
         ph_y = tf.placeholder(tf.float32, shape=[None, label_num])
+        # (1-dropout ratio) placeholder
+        drop_ratio = tf.placeholder(tf.float32)
+
         # build cnn model, get placeholder, and result logits
-        result_logits = buildModel(ph_x, (x_w,x_h,x_ch), label_num)
+        result_logits = buildModel(ph_x, drop_ratio, (x_w,x_h,x_ch), label_num)
         # get loss from diff between "input label" and "result through cnn model"
-        loss_val = defineLoss(ph_y, result_logits)
+        loss_val = defineLoss(result_logits, ph_y)
         # training model step
         training_step = minimizeLoss(loss_val)
+        # check accuracy
+        check_step = checkAccuracy(result_logits, ph_y)
 
         # ready session
         sess  = tf.Session()
@@ -160,9 +184,13 @@ def main():
         # do learn
         total_x_num = ph_x.shape[0]
         epoch_sz = 100
-        minibatch_sz = 1
-        sess = runLearning(sess, training_step, (in_xs, in_ys), epoch_sz, minibatch_sz)
-
+        minibatch_sz = 100
+        sess = runLearning( sess
+                          , (training_step, check_step)
+                          , (epoch_sz, minibatch_sz)
+                          , (in_xs, in_ys)
+                          , 0.2
+                          )
         # save model
         model_name = "model.ckpt"
         model_path = os.path.join(COMMON_DIR_PATH, model_name)
