@@ -137,7 +137,7 @@ def main():
                 tgt_to_pick, rest_tgt = npSplit(minibatch_sz, rest_tgt)
                 batch_x = train_x[tgt_to_pick]
                 batch_y = train_y[tgt_to_pick]
-                sess.run(training_step, feed_dict={ph_x:batch_x, ph_y:batch_y, drop_ratio:0.5})
+                sess.run(training_step, feed_dict={ph_x:batch_x, ph_y:batch_y, drop_ratio:0.0})
             if(ep%10 == 0):
                 train=sess.run(check_step, feed_dict={ph_x:batch_x, ph_y:batch_y, drop_ratio:0.0})
                 acc=sess.run(check_step, feed_dict={ph_x:test_x, ph_y:test_y, drop_ratio:0.0})

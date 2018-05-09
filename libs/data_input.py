@@ -15,13 +15,11 @@ def getImages(picDirPath, label):
         # Load the image
         img = cv2.imread(img)
         # Resize the image to 20x20 squware
-        img = resize2squware(img, 20, 20)
+        img = resize2squware(img, 40, 40)
         # Add a third channel dimension to the image to make Keras happy
         img = np.expand_dims(img, axis=2)
         datas.append(img)
         labels.append(label)
-        if(0 < c):
-            break
         c = c+1
 
     return datas, labels
