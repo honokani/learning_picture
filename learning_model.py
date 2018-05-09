@@ -7,24 +7,24 @@ COMMON_DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 CAPTCHA_PICS_DIR_NAME = "pics"
 CAPTCHA_PICS_DIR_PATH = os.path.join(COMMON_DIR_PATH, CAPTCHA_PICS_DIR_NAME)
 
-def main():
-    def getInputDatas():
-        # input dataset and their labels
-        ds, ls = data_in.getDataset(CAPTCHA_PICS_DIR_PATH)
-        # make label set
-        lSet = set()
-        enUnique = lambda seq: [ x for x in seq if x not in lSet and not lSet.add(x) ]
-        lList=enUnique(ls)
-        lList.sort()
-        # make one-hot vector
-        makeOneHot = lambda x: [ 1 if y==x else 0  for y in lList ]
-        ls = list( map(makeOneHot,ls) )
-        # ready to input
-        data_l = np.array(ls)
-        # make data set
-        data_x = np.array(ds, dtype="float") / 255.0
-        return data_x, data_l
+def getInputDatas():
+    # input dataset and their labels
+    ds, ls = data_in.getDataset(CAPTCHA_PICS_DIR_PATH)
+    # make label set
+    lSet = set()
+    enUnique = lambda seq: [ x for x in seq if x not in lSet and not lSet.add(x) ]
+    lList=enUnique(ls)
+    lList.sort()
+    # make one-hot vector
+    makeOneHot = lambda x: [ 1 if y==x else 0  for y in lList ]
+    ls = list( map(makeOneHot,ls) )
+    # ready to input
+    data_l = np.array(ls)
+    # make data set
+    data_x = np.array(ds, dtype="float") / 255.0
+    return data_x, data_l
 
+def main():
     def makeBiasVal(shape):
         b = tf.constant(0.1, shape=shape)
         return tf.Variable(b)
